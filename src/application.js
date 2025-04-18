@@ -49,7 +49,7 @@ class Application {
       documentTable: document.getElementById("document-table"),
     };
 
-    this.data = await (await fetch("../ese-lite/data/dceg_publications.json")).json();
+    this.data = await (await fetch("../paper-space/data/dceg_publications.json")).json();
     this.matches = this.data.map(d => ({dataRow: d, match: false}));
     this.dataIndex = new Map(this.data.map(d => [d.id, d]));
     this.setupFilters();
