@@ -1,6 +1,7 @@
 import { State } from "./State.js";
-import { Tabulator, SelectRowModule } from 'https://cdn.jsdelivr.net/npm/tabulator-tables@6.2.1/+esm';
+import { Tabulator, SelectRowModule, FormatModule } from 'https://cdn.jsdelivr.net/npm/tabulator-tables@6.2.1/+esm';
 
+Tabulator.registerModule([SelectRowModule, FormatModule]);
 
 const CATEGORICAL_COLOR_SCHEME = [
   "#4269d0", 
@@ -54,9 +55,8 @@ class Application {
     this.dataIndex = new Map(this.data.map(d => [d.id, d]));
     this.setupFilters();
     this.hookSearch();
-    this.initTable();
     this.initPlot();
-
+    this.updateTable();
 
     this.filterColorMap = new Map();
 
@@ -135,6 +135,7 @@ class Application {
     this.toggleButton(this.elems.resetButton, this.state.filters.length > 0 || this.state.selection != null);
 
     this.updatePlot();
+    this.updateTable();
   }
   
   listenSelection() {
@@ -145,50 +146,94 @@ class Application {
       this.elems.documentHeading.innerText = row.properties[DOCUMENT_TITLE_FIELD];
       this.elems.documentContent.innerText = row.text;
 
-      const rowDistances = this.data.map(d => ({
-        row: d,
-        distance: euclideanDistance(d.embeddings[0].vector, row.embeddings[0].vector)
-      }));
-      rowDistances.sort((a,b) => a.distance - b.distance);
-      this.state.highlight = new Set(rowDistances.slice(0, 16).map(d => d.row.id));
-
-      const tableRows = rowDistances.slice(1).map(d => ({
-        id: d.row.properties.paperKey,
-        distance: parseFloat(d.distance.toFixed(3))
-      }))
-
+      this.distances = this.data.map(d => ({
+        dataRow: d, distance: euclideanDistance(d.embeddings[0].vector, row.embeddings[0].vector)}));
+      this.distances.sort((a,b) => a.distance - b.distance);
       
-      const columns = [
-        { field: "id", title: "Paper"},
-        { field: "distance", title: "Distance"}
-      ];
-
-      new Tabulator(this.elems.documentTable, {
-        data: tableRows, 
-        columns,
-        layout:"fitColumns",
-      });
+      this.state.highlight = new Set(this.distances.slice(0, 16).map(d => d.dataRow.id));
     } else {
       this.elems.document.classList.remove("active");
-     
       this.state.highlight = new Set();
-
-      const tableRows = this.data.map(d => ({
-        id: d.properties.paperKey,
-      }))
-      
-      const columns = [
-        { field: "id", title: "Paper"},
-      ];
-
-      new Tabulator(this.elems.documentTable, {
-        data: tableRows, 
-        columns,
-        layout:"fitColumns",
-      });
     }
+    this.updateTable();
 
     this.toggleButton(this.elems.resetButton, this.state.filters.length > 0 || this.state.selection != null);
+  }
+
+  updateTable() {
+    let tableRows; 
+    let tableColumns;
+
+    const matchIndex = new Map(this.matches.map(d => [d.dataRow.id, d]));
+    const nameFormatter = (cell, params, onRendered) => {
+      const cellElement = document.createElement("div");
+      cellElement.style.display = "flex";
+      cellElement.style.gap = "5px";
+      const tableRow = cell._cell.row.data;
+      const matches = matchIndex.get(tableRow.id);
+
+      if (matches.match) {
+        const matchTagContainer = document.createElement("div");
+        matchTagContainer.style.display = "flex";
+        matchTagContainer.style.gap = "2px";
+  
+        for (const match of matches.match) {
+          const matchTagElement = document.createElement("span");
+          matchTagElement.style.width = "8px";
+          matchTagElement.style.height = "16px";
+          matchTagElement.style.backgroundColor = this.filterColorMap.get(match.key);
+          matchTagElement.style.borderRadius = "5px";
+          matchTagContainer.appendChild(matchTagElement);
+        }
+  
+
+        const cellText = document.createElement("span");
+        cellText.innerText = cell._cell.value;
+
+        cellElement.appendChild(matchTagContainer);
+        cellElement.appendChild(cellText);
+      } else {
+        cellElement.innerText = cell._cell.value;
+      }
+      
+  
+      return cellElement
+    }
+
+    if (this.state.selection) {
+      tableRows = this.distances.slice(1).map(d => ({
+        id: d.dataRow.id,
+        name: d.dataRow.properties.paperKey,
+        distance: parseFloat(d.distance.toFixed(3)),
+        dataRow: d.dataRow
+      }));
+
+      tableColumns = [
+        { field: "name", title: "Paper", formatter: nameFormatter},
+        { field: "distance", title: "Distance"}
+      ];
+    } else {
+      tableRows = this.data.map(d => ({
+        id: d.id,
+        name: d.properties.paperKey,
+        dataRow: d
+      }));
+
+      tableColumns = [
+        { field: "name", title: "Paper", formatter: nameFormatter},
+      ];
+    }
+
+    console.log(tableColumns)
+    const table = new Tabulator(this.elems.documentTable, {
+      selectableRows: 1,
+      data: tableRows, 
+      columns: tableColumns,
+      layout: "fitColumns",
+    });
+    table.on("rowSelectionChanged", (data, rows, selected) => {
+      this.state.selection = selected[0]._row.data.id;
+    });
   }
 
   listenHighlight() {
@@ -296,18 +341,6 @@ class Application {
         this.state.selection = e.points[0].customdata.id;
       }
     })
-  }
-
-  initTable() {
-    const columns = [
-      { field: "paperKey", title: "Paper"},
-    ];
-
-    const table = new Tabulator(this.elems.documentTable, {
-      data: this.data.map(d => d.properties), 
-      columns,
-      layout:"fitColumns",
-    });
   }
 
   updatePlot() {
