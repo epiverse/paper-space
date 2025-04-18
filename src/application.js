@@ -108,6 +108,10 @@ class Application {
             if (valueSet.has(filter.value)) {
               matches.push(filter);
             }
+          } else {
+            if (filter.value == row.properties[filter.property]) {
+              matches.push(filter);
+            }
           }
         }
         if (matches.length > 0) {
@@ -288,7 +292,6 @@ class Application {
     });
 
     this.elems.plotContainer.on("plotly_click", e => {
-      console.log(e)
       if (e.points[0].customdata) {
         this.state.selection = e.points[0].customdata.id;
       }
